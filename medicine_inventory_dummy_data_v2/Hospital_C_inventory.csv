@@ -1,0 +1,11 @@
+ID,Medicine,Urgency,Amount
+M001,Paracetamol,1,63
+M002,Ibuprofen,1,46
+M003,Amoxicillin,3,111
+M004,Insulin,5,29
+M005,Epinephrine,5,86
+M006,Salbutamol,4,51
+M007,Morphine,5,71
+M008,Aspirin,2,109
+M009,Metformin,4,148
+M010,Atorvastatin,3,94
