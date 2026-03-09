@@ -73,7 +73,7 @@
                                     <tr><td>Lender:</td><td><strong>{{ item.solution.Facility }}</strong></td></tr>
                                     <tr><td>Stock:</td><td>{{ item.solution.Qty }} units</td></tr>
                                 </table>
-                                <button class="btn btn-primary w-100 btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#transferModal" data-medicine="{{ item.Medicine }}" data-id="{{ item.ID }}" data-qty="{{ item.solution.Qty }}">Execute H2H Transfer</button>
+                                <button class="btn btn-primary w-100 btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#transferModal" data-medicine="{{ item.Medicine }}" data-id="{{ item.ID }}" data-qty="{{ item.solution.Qty }}" data-lender="{{ item.solution.Facility }}" data-receiver="{{ hospital }}">Execute H2H Transfer</button>
                             </div>
                             {% else %}
                             <div class="p-3 bg-warning bg-opacity-10 rounded border border-warning mb-3">
@@ -128,28 +128,63 @@
 <script>
     document.getElementById('current-time').innerText = new Date().toLocaleString();
 
-    // Handle modal show event to populate medicine name
     const transferModal = document.getElementById('transferModal');
+    const quantityInput = document.getElementById('drugQuantity');
+    let transferContext = null;
+
     transferModal.addEventListener('show.bs.modal', function (event) {
         const button = event.relatedTarget;
         const medicine = button.getAttribute('data-medicine');
         const id = button.getAttribute('data-id');
-        const qty = button.getAttribute('data-qty');
+        const qty = Number(button.getAttribute('data-qty')) || 0;
+        const lender = button.getAttribute('data-lender');
+        const receiver = button.getAttribute('data-receiver');
+
+        transferContext = { medicineLabel: medicine, medicineId: id, lender, receiver, maxQty: qty };
         document.getElementById('modalMedicine').textContent = `Transferring: ${medicine} (ID: ${id}) - Available: ${qty} units`;
-        document.getElementById('drugQuantity').max = qty;
-        document.getElementById('drugQuantity').placeholder = `Max: ${qty}`;
+        quantityInput.max = qty;
+        quantityInput.placeholder = `Max: ${qty}`;
+        quantityInput.value = '';
     });
 
-    // Handle confirm transfer
-    document.getElementById('confirmTransfer').addEventListener('click', function() {
-        const quantity = document.getElementById('drugQuantity').value;
-        const maxQty = document.getElementById('drugQuantity').max;
-        if (quantity && quantity > 0 && quantity <= maxQty) {
-            alert(`H2H Transfer Requested for ${quantity} units!`);
-            bootstrap.Modal.getInstance(transferModal).hide();
-            document.getElementById('drugQuantity').value = '';
-        } else {
+    async function submitTransfer(quantity) {
+        const response = await fetch('/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                medicine_id: transferContext.medicineId,
+                lender: transferContext.lender,
+                receiver: transferContext.receiver,
+                amount: quantity
+            })
+        });
+        return response.json().then(data => ({ ok: response.ok, data }));
+    }
+
+    document.getElementById('confirmTransfer').addEventListener('click', async function() {
+        if (!transferContext) {
+            alert('Transfer context missing. Please reopen the modal.');
+            return;
+        }
+
+        const quantity = Number(quantityInput.value);
+        if (!quantity || quantity <= 0 || quantity > transferContext.maxQty) {
             alert('Please enter a valid quantity within the available stock.');
+            return;
+        }
+
+        try {
+            const result = await submitTransfer(quantity);
+            if (result.ok) {
+                alert(result.data.message || 'Transfer completed!');
+                bootstrap.Modal.getInstance(transferModal).hide();
+                window.location.reload();
+            } else {
+                alert(result.data.message || 'Transfer failed.');
+            }
+        } catch (error) {
+            alert('Unexpected error while executing transfer.');
+            console.error(error);
         }
     });
 </script>

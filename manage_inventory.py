@@ -102,7 +102,10 @@ def write_csv(path: Path, headers: Sequence[str], rows: Iterable[Dict[str, str]]
             writer.writerow(row)
 
 
-def partition_expired(rows: Iterable[Dict[str, str]], cutoff: date) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+def partition_expired(
+    rows: Iterable[Dict[str, str]],
+    cutoff: date,
+) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     kept: List[Dict[str, str]] = []
     expired: List[Dict[str, str]] = []
 
@@ -178,7 +181,7 @@ def process_hospital(
 
     if not logs_dir.exists():
         print(f"⚠️  No log directory found for {hospital}: {logs_dir}")
-        return []
+        return [], []
 
     log_files = sorted(logs_dir.glob("*.csv"))
     if not log_files:
@@ -236,7 +239,6 @@ def process_hospital(
     if not dry_run and inventory_changes:
         write_csv(inventory_path, headers, inventory_rows)
 
-    # Merge log metadata into the inventory-based change objects
     for change in inventory_changes:
         if change.medicine_id in change_records:
             change.log_path = change_records[change.medicine_id].log_path

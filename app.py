@@ -2,32 +2,40 @@ import os
 import pandas as pd
 import time
 import subprocess  # <--- New Import
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template, request
 from collections import defaultdict
+from pathlib import Path
+
+from update_inventory import execute_transfer
 
 app = Flask(__name__)
+BASE_DIR = Path(__file__).resolve().parent / "medicine_inventory_dummy_data_v2"
 
 def get_data():
     # 1. RUN THE INVENTORY SCRIPT AUTOMATICALLY
     # This runs: python manage_inventory.py --base-dir "Value/medicine_inventory_dummy_data_v2"
     try:
-        subprocess.run([
-            "python", 
-            "manage_inventory.py", 
-            "--base-dir", "Value/medicine_inventory_dummy_data_v2"
-        ], check=True)
+        subprocess.run(
+            [
+                "python",
+                "manage_inventory.py",
+                "--base-dir",
+                str(BASE_DIR),
+            ],
+            check=True,
+        )
         print("Inventory script synced successfully.")
     except Exception as e:
         print(f"Error running inventory script: {e}")
 
     # 2. NOW READ THE DATA (Which is now fresh)
-    base_path = 'Value/medicine_inventory_dummy_data_v2'
-    hosp_a = pd.read_csv(f'{base_path}/Hospital_A_inventory.csv')
+    base_path = BASE_DIR
+    hosp_a = pd.read_csv(base_path / 'Hospital_A_inventory.csv')
     
     network_list = []
     for letter in ['B', 'C', 'D', 'E']:
-        path = f'{base_path}/Hospital_{letter}_inventory.csv'
-        if os.path.exists(path):
+        path = base_path / f'Hospital_{letter}_inventory.csv'
+        if path.exists():
             df = pd.read_csv(path)
             df['Hospital_Source'] = f'Hospital {letter}'
             network_list.append(df)
@@ -47,7 +55,7 @@ def index():
     hospitals_in_incident = set()
 
     # Track last sync for the footer
-    file_path = 'Value/medicine_inventory_dummy_data_v2/Hospital_A_inventory.csv'
+    file_path = BASE_DIR / 'Hospital_A_inventory.csv'
     last_sync = time.ctime(os.path.getmtime(file_path))
 
     for item in all_shortages:
@@ -100,6 +108,34 @@ def index():
                            grouped_shortages=grouped_results, 
                            incident_hospitals=header_text,
                            last_sync=last_sync)
+
+
+@app.route('/transfer', methods=['POST'])
+def transfer():
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        medicine_id = payload['medicine_id']
+        lender = payload['lender']
+        receiver = payload['receiver']
+        amount = int(payload['amount'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'Invalid transfer payload'}), 400
+
+    try:
+        result = execute_transfer(BASE_DIR, medicine_id, lender, receiver, amount)
+    except Exception as exc:
+        return jsonify({'status': 'error', 'message': str(exc)}), 400
+
+    return jsonify(
+        {
+            'status': 'ok',
+            'message': (
+                f"Transferred {result.quantity} units of {result.medicine_name} "
+                f"from {result.lender} to {result.receiver}."
+            ),
+            'batches': result.transferred_batches,
+        }
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)
