@@ -17,6 +17,11 @@
         .solution-box { background-color: #f0fff4; border: 1px solid #c6f6d5; border-radius: 8px; }
         .btn-purchase { background-color: #e9ecef; border: 1px solid #ced4da; color: #adb5bd; cursor: not-allowed; font-size: 0.7rem; text-transform: uppercase; }
         .footer-note { font-size: 0.8rem; color: #6c757d; }
+        .prediction-panel { background: white; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); padding: 1.5rem; border-left: 5px solid var(--hc-blue); }
+        .prediction-card { border: 1px solid #e9ecef; border-left: 4px solid var(--hc-danger); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+        .prediction-card:last-child { margin-bottom: 0; }
+        .prediction-card small { font-size: 0.75rem; }
+        .sticky-panel { position: sticky; top: 90px; }
     </style>
 </head>
 <body>
@@ -35,64 +40,124 @@
 </div>
 
 <div class="container mt-5">
-    <div class="row mb-4">
-        <div class="col">
-            <h4>Live Incident Report: <span class="text-primary">{{ incident_hospitals }}</span></h4>
-            <p class="text-muted">Analyzing Multi-Facility Inventory Logs. Priority: <strong>Urgent</strong></p>
-        </div>
-    </div>
-
-    {% for hospital, items in grouped_shortages.items() %}
-    <div class="hospital-section">
-        <div class="hospital-header">
-            <h5 class="text-secondary">📍 Current Shortages: {{ hospital }}</h5>
-        </div>
-        
-        <div class="row">
-            {% for item in items %}
-            <div class="col-md-6 col-lg-4 mb-4">
-                <div class="card h-100 shadow-sm card-shortage">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h5 class="card-title text-dark mb-0">{{ item.Medicine }}</h5>
-                            <span class="badge {{ item.risk_class }} risk-badge">Risk: {{ item.risk_score }}</span>
-                        </div>
-                        <p class="text-muted small mb-3">ID: {{ item.ID }} | Priority: {{ item.Urgency }}</p>
-                        
-                        <div class="mb-3">
-                            <span>Status: <strong class="text-danger">{{ item.status_label }} ({{ item.Amount }} units)</strong></span>
-                        </div>
-
-                        <hr class="mt-auto">
-
-                        <div class="flex-grow-1">
-                            {% if item.solution %}
-                            <div class="solution-box p-3 mb-3">
-                                <h6 class="text-success small mb-2">H2H SOURCE IDENTIFIED</h6>
-                                <table class="table table-sm table-borderless small mb-2">
-                                    <tr><td>Lender:</td><td><strong>{{ item.solution.Facility }}</strong></td></tr>
-                                    <tr><td>Stock:</td><td>{{ item.solution.Qty }} units</td></tr>
-                                </table>
-                                <button class="btn btn-primary w-100 btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#transferModal" data-medicine="{{ item.Medicine }}" data-id="{{ item.ID }}" data-qty="{{ item.solution.Qty }}" data-lender="{{ item.solution.Facility }}" data-receiver="{{ hospital }}">Execute H2H Transfer</button>
-                            </div>
-                            {% else %}
-                            <div class="p-3 bg-warning bg-opacity-10 rounded border border-warning mb-3">
-                                <h6 class="text-dark small mb-1">🤖 AI AGENT SUGGESTION</h6>
-                                <p class="small text-muted mb-2">Alternative: <strong>{{ item.ai_suggestion }}</strong></p>
-                                <button class="btn btn-outline-dark btn-sm w-100">Verify Clinical Sub</button>
-                            </div>
-                            {% endif %}
-                        </div>
-
-                        <button class="btn btn-purchase btn-sm w-100 mt-2" disabled>External Commercial Purchase</button>
-                        <small class="text-center text-muted mt-1" style="font-size: 0.6rem;">Direct purchase locked during H2H window</small>
+    <div class="row g-4">
+        <aside class="col-lg-4">
+            <div class="prediction-panel sticky-panel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="text-uppercase text-muted mb-0" style="font-size: 0.85rem;">Current Shortages</h5>
+                        <h3 class="mb-0">Live Incident Feed</h3>
+                        <small class="text-muted">Hospitals: {{ incident_hospitals }}</small>
                     </div>
+                    <span class="badge bg-danger">Live</span>
+                </div>
+
+                {% if grouped_shortages %}
+                    {% for hospital, items in grouped_shortages|dictsort %}
+                    <div class="mb-3">
+                        <h6 class="text-uppercase text-muted small mb-2">📍 {{ hospital }}</h6>
+                        {% for item in items %}
+                        <div class="card shadow-sm card-shortage mb-3">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title text-dark mb-0">{{ item.Medicine }}</h6>
+                                    <span class="badge {{ item.risk_class }} risk-badge">Risk: {{ item.risk_score }}</span>
+                                </div>
+                                <p class="text-muted small mb-2">ID: {{ item.ID }} | Priority: {{ item.Urgency }}</p>
+                                <p class="small mb-2">Status: <strong class="text-danger">{{ item.status_label }} ({{ item.Amount }} units)</strong></p>
+
+                                <div class="flex-grow-1">
+                                    {% if item.solution %}
+                                    <div class="solution-box p-3 mb-3">
+                                        <h6 class="text-success small mb-2">H2H SOURCE IDENTIFIED</h6>
+                                        <table class="table table-sm table-borderless small mb-2">
+                                            <tr><td>Lender:</td><td><strong>{{ item.solution.Facility }}</strong></td></tr>
+                                            <tr><td>Stock:</td><td>{{ item.solution.Qty }} units</td></tr>
+                                        </table>
+                                        <button class="btn btn-primary w-100 btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#transferModal" data-medicine="{{ item.Medicine }}" data-id="{{ item.ID }}" data-qty="{{ item.solution.Qty }}" data-lender="{{ item.solution.Facility }}" data-receiver="{{ hospital }}">Execute H2H Transfer</button>
+                                    </div>
+                                    {% else %}
+                                    <div class="p-3 bg-warning bg-opacity-10 rounded border border-warning mb-3">
+                                        <h6 class="text-dark small mb-1">🤖 AI AGENT SUGGESTION</h6>
+                                        <p class="small text-muted mb-2">Alternative: <strong>{{ item.ai_suggestion }}</strong></p>
+                                        <button class="btn btn-outline-dark btn-sm w-100">Verify Clinical Sub</button>
+                                    </div>
+                                    {% endif %}
+                                </div>
+
+                                <button class="btn btn-purchase btn-sm w-100 mt-2" disabled>External Commercial Purchase</button>
+                                <small class="text-center text-muted mt-1" style="font-size: 0.6rem;">Direct purchase locked during H2H window</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted mb-0">No active shortages right now. All inventories stable.</p>
+                {% endif %}
+            </div>
+        </aside>
+
+        <div class="col-lg-8">
+            <div class="row mb-4">
+                <div class="col">
+                    <h4>Forecasted Shortages <span class="text-primary">(Next 2 Weeks)</span></h4>
+                    <p class="text-muted mb-0">Predictive model scanning network for early warnings.</p>
+                </div>
+            </div>
+
+            {% if predicted_forecasts %}
+            {% for hospital, forecasts in predicted_forecasts|dictsort %}
+            <div class="hospital-section">
+                <div class="hospital-header">
+                    <h5 class="text-secondary">Forecast: {{ hospital }}</h5>
+                </div>
+                <div class="row">
+                    {% for forecast in forecasts %}
+                    <div class="col-md-6 col-lg-6 mb-4">
+                        <div class="card h-100 shadow-sm card-shortage">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h5 class="card-title text-dark mb-0">{{ forecast.Medicine }}</h5>
+                                    <span class="badge {{ forecast.risk_class }} risk-badge">Risk: {{ forecast.risk_score }}</span>
+                                </div>
+                                <p class="text-muted small mb-2">ID: {{ forecast.ID }} | Facility: {{ forecast.Hospital_Source }}</p>
+                                <p class="small mb-2">Forecast: <strong>{{ forecast.status_label }}</strong> within {{ forecast.forecast_window_weeks }} weeks</p>
+                                <p class="small mb-3">Current stock: <strong>{{ forecast.Amount }} units</strong><br><span class="text-muted">Forecast week: {{ forecast.forecast_week }}</span></p>
+
+                                <div class="flex-grow-1">
+                                    {% if forecast.solution %}
+                                    <div class="solution-box p-3 mb-3">
+                                        <h6 class="text-success small mb-2">H2H SOURCE IDENTIFIED</h6>
+                                        <table class="table table-sm table-borderless small mb-2">
+                                            <tr><td>Lender:</td><td><strong>{{ forecast.solution.Facility }}</strong></td></tr>
+                                            <tr><td>Stock:</td><td>{{ forecast.solution.Qty }} units</td></tr>
+                                        </table>
+                                        <button class="btn btn-primary w-100 btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#transferModal" data-medicine="{{ forecast.Medicine }}" data-id="{{ forecast.ID }}" data-qty="{{ forecast.solution.Qty }}" data-lender="{{ forecast.solution.Facility }}" data-receiver="{{ forecast.Hospital_Source }}">Execute H2H Transfer</button>
+                                    </div>
+                                    {% else %}
+                                    <div class="p-3 bg-warning bg-opacity-10 rounded border border-warning mb-3">
+                                        <h6 class="text-dark small mb-1">🤖 AI AGENT SUGGESTION</h6>
+                                        <p class="small text-muted mb-2">Alternative: <strong>{{ forecast.ai_suggestion }}</strong></p>
+                                        <button class="btn btn-outline-dark btn-sm w-100">Verify Clinical Sub</button>
+                                    </div>
+                                    {% endif %}
+                                </div>
+
+                                <button class="btn btn-purchase btn-sm w-100 mt-2" disabled>External Commercial Purchase</button>
+                                <small class="text-center text-muted mt-1" style="font-size: 0.6rem;">Direct purchase locked during H2H window</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
             {% endfor %}
+            {% else %}
+            <div class="alert alert-success">No forecasted shortages detected. Predictive model reports stable outlook.</div>
+            {% endif %}
         </div>
     </div>
-    {% endfor %}
 
     <!-- Transfer Modal -->
     <div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferModalLabel" aria-hidden="true">

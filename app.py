@@ -7,9 +7,11 @@ from collections import defaultdict
 from pathlib import Path
 
 from update_inventory import execute_transfer
+from shortage_forecast import predict_upcoming_shortages
 
 app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent / "medicine_inventory_dummy_data_v2"
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "shortage_model.joblib"
 
 def get_data():
     # 1. RUN THE INVENTORY SCRIPT AUTOMATICALLY
@@ -104,10 +106,87 @@ def index():
 
     header_text = ", ".join(sorted(hospitals_in_incident)) if hospitals_in_incident else "No Active Incidents"
 
+    predicted_shortages = []
+    try:
+        forecast_rows = predict_upcoming_shortages(
+            BASE_DIR,
+            MODEL_PATH,
+            probability_threshold=0.8,
+        )
+    except Exception as exc:
+        print(f"Forecasting failed: {exc}")
+        forecast_rows = []
+
+    for row in forecast_rows:
+        probability = float(row['probability'])
+        hospital = row['Hospital_Source']
+        urgency_val = float(row.get('urgency', 1))
+        amount = int(row['current_amount'])
+
+        risk_score = urgency_val
+        risk_score += 3.0 if amount == 0 else 1.0
+
+        forecast_item = {
+            'Hospital_Source': hospital,
+            'Medicine': row['Medicine'],
+            'ID': row['Medicine_ID'],
+            'Amount': int(row['current_amount']),
+            'forecast_week': row['Week_Start_Date'],
+            'forecast_window_weeks': row['forecast_window_weeks'],
+            'probability': probability,
+            'status_label': 'FORECASTED SHORTAGE',
+        }
+
+        potential_lenders = df_full_network[
+            (df_full_network['ID'] == row['Medicine_ID']) &
+            (df_full_network['Hospital_Source'] != hospital) &
+            (df_full_network['Amount'] > 0)
+        ]
+
+        if not potential_lenders.empty:
+            best_match = potential_lenders.loc[potential_lenders['Amount'].idxmax()]
+            forecast_item['solution'] = {
+                'Facility': best_match['Hospital_Source'],
+                'Qty': int(best_match['Amount'])
+            }
+        else:
+            forecast_item['solution'] = None
+            forecast_item['ai_suggestion'] = {
+                'M004': 'Insulin Lispro',
+                'M005': 'Norepinephrine',
+                'M009': 'Glipizide'
+            }.get(row['Medicine_ID'], 'Consult Pharmacist')
+
+        if not forecast_item['solution']:
+            risk_score += 2.0
+
+        forecast_item['risk_score'] = min(risk_score, 10.0)
+
+        if forecast_item['risk_score'] >= 8.0:
+            risk_class = 'bg-danger'
+        elif forecast_item['risk_score'] >= 5.0:
+            risk_class = 'bg-warning text-dark'
+        else:
+            risk_class = 'bg-success'
+
+        forecast_item['risk_class'] = risk_class
+
+        predicted_shortages.append(forecast_item)
+
+    predicted_shortages = sorted(predicted_shortages, key=lambda x: x['probability'], reverse=True)[:10]
+
+    grouped_forecasts = defaultdict(list)
+    for item in predicted_shortages:
+        grouped_forecasts[item['Hospital_Source']].append(item)
+
+    for hosp in grouped_forecasts:
+        grouped_forecasts[hosp] = sorted(grouped_forecasts[hosp], key=lambda x: x['risk_score'], reverse=True)
+
     return render_template('index.html', 
                            grouped_shortages=grouped_results, 
                            incident_hospitals=header_text,
-                           last_sync=last_sync)
+                           last_sync=last_sync,
+                           predicted_forecasts=grouped_forecasts)
 
 
 @app.route('/transfer', methods=['POST'])
