@@ -9,6 +9,129 @@ from pathlib import Path
 from update_inventory import execute_transfer
 from shortage_forecast import predict_upcoming_shortages
 
+
+# ── LLM Alternative-Medicine Helpers ──────────────────────────────────────
+
+def get_ai_alternative_id(medicine_id):
+    """Get the AI-suggested alternative medicine ID for a given medicine"""
+    alternative_mapping = {
+        'M001': 'M002',   # Paracetamol <-> Ibuprofen
+        'M002': 'M001',   # Ibuprofen <-> Paracetamol
+        'M003': 'M013',   # Amoxicillin -> Cephalexin 500mg
+        'M004': 'M014',   # Insulin -> Insulin Lispro
+        'M005': 'M015',   # Epinephrine -> Norepinephrine
+        'M006': 'M016',   # Salbutamol -> Terbutaline inhaler
+        'M007': 'M017',   # Morphine -> Fentanyl patch
+        'M008': 'M018',   # Aspirin -> Clopidogrel 75mg
+        'M009': 'M019',   # Metformin -> Glipizide 5mg
+        'M010': 'M020',   # Atorvastatin -> Simvastatin 20mg
+    }
+    return alternative_mapping.get(medicine_id)
+
+
+def check_local_alternative_available(hospital_source, medicine_id, df_full_network):
+    """Check if the hospital has the AI-suggested alternative available locally"""
+    alternative_id = get_ai_alternative_id(medicine_id)
+    if not alternative_id:
+        return False
+    local_alternative = df_full_network[
+        (df_full_network['ID'] == alternative_id) &
+        (df_full_network['Hospital_Source'] == hospital_source) &
+        (df_full_network['Amount'] > 0)
+    ]
+    return not local_alternative.empty
+
+
+def LLM_advisory(medicine_id, medicine_name):
+    """
+    Simulated LLM function for clinical advisory when no H2H transfer is possible.
+    Returns dict with 'therapeutic_alternative' and 'clinical_rationale'.
+    """
+    advisory_database = {
+        'M001': {
+            'therapeutic_alternative': 'M002 - Ibuprofen',
+            'clinical_rationale': 'Both are analgesics/antipyretics. Ibuprofen provides similar pain relief and fever reduction. Monitor for GI contraindications.'
+        },
+        'M002': {
+            'therapeutic_alternative': 'M001 - Paracetamol',
+            'clinical_rationale': 'Alternative analgesic with different mechanism. Safer for patients with GI issues or cardiovascular risk factors.'
+        },
+        'M003': {
+            'therapeutic_alternative': 'M013 - Cephalexin 500mg',
+            'clinical_rationale': 'First-generation cephalosporin with similar spectrum. Effective against gram-positive bacteria. Check penicillin allergy history.'
+        },
+        'M004': {
+            'therapeutic_alternative': 'M014 - Insulin Lispro',
+            'clinical_rationale': 'CRITICAL: Insulin substitution requires careful dosing adjustment. Consult endocrinologist immediately for conversion protocols.'
+        },
+        'M005': {
+            'therapeutic_alternative': 'M015 - Norepinephrine',
+            'clinical_rationale': 'EMERGENCY: For anaphylaxis, no substitute exists. For cardiac support, norepinephrine may be considered with dose adjustment.'
+        },
+        'M006': {
+            'therapeutic_alternative': 'M016 - Terbutaline Inhaler',
+            'clinical_rationale': 'Alternative beta-2 agonist bronchodilator. Similar efficacy for acute bronchospasm. Adjust dosing per protocol.'
+        },
+        'M007': {
+            'therapeutic_alternative': 'M017 - Fentanyl Patch',
+            'clinical_rationale': 'Equianalgesic opioid conversion required. Fentanyl: 1mg morphine = 0.01mg fentanyl. Monitor respiratory status closely.'
+        },
+        'M008': {
+            'therapeutic_alternative': 'M018 - Clopidogrel 75mg',
+            'clinical_rationale': 'Alternative antiplatelet agent. Different mechanism but similar cardiovascular protection. Monitor bleeding risk.'
+        },
+        'M009': {
+            'therapeutic_alternative': 'M019 - Glipizide 5mg',
+            'clinical_rationale': 'Different class (sulfonylurea vs biguanide). Monitor for hypoglycemia risk. Consider insulin if severe diabetes.'
+        },
+        'M010': {
+            'therapeutic_alternative': 'M020 - Simvastatin 20mg',
+            'clinical_rationale': 'Alternative HMG-CoA reductase inhibitor. Similar efficacy for cholesterol management. Monitor liver function.'
+        },
+    }
+    if medicine_id in advisory_database:
+        return advisory_database[medicine_id]
+    return {
+        'therapeutic_alternative': 'Consult Clinical Pharmacist',
+        'clinical_rationale': f'No standard alternative identified for {medicine_name}. Immediate pharmacist consultation required.'
+    }
+
+
+def build_alternative_advice(hospital_source, medicine_id, medicine_name, df_full_network):
+    """
+    Build full alternative-medicine advice dict for a shortage item.
+    Returns a dict with ai_suggestion, ai_rationale, alt_id, and best_source info,
+    or None if no alternative mapping exists.
+    """
+    alternative_id = get_ai_alternative_id(medicine_id)
+    if not alternative_id:
+        return None
+
+    llm = LLM_advisory(medicine_id, medicine_name)
+
+    # Find all hospitals with the alternative in stock
+    network_alt = df_full_network[
+        (df_full_network['ID'] == alternative_id) &
+        (df_full_network['Amount'] > 0)
+    ]
+
+    best_source = None
+    if not network_alt.empty:
+        best_row = network_alt.loc[network_alt['Amount'].idxmax()]
+        best_source = {
+            'Facility': best_row['Hospital_Source'],
+            'Qty': int(best_row['Amount']),
+            'Medicine': best_row['Medicine'],
+        }
+
+    return {
+        'ai_suggestion': llm['therapeutic_alternative'],
+        'ai_rationale': llm['clinical_rationale'],
+        'alt_id': alternative_id,
+        'alt_source': best_source,
+    }
+
+
 app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent / "medicine_inventory_dummy_data_v2"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "shortage_model.joblib"
@@ -64,39 +187,55 @@ def index():
         # Data Cleaning: Convert CSV strings to integers
         urgency_val = int(item.get('Urgency', 1))
         amount = int(item.get('Amount', 0))
-        
+
+        # Skip shortages resolved by a local AI alternative
+        if amount == 0 and check_local_alternative_available(item['Hospital_Source'], item['ID'], df_full_network):
+            continue
+
         item['status_label'] = "STOCKOUT" if amount == 0 else "LOW STOCK"
         hospitals_in_incident.add(item['Hospital_Source'])
-        
-        # FIND SOLUTION
+
+        # Initialize solution fields
+        item['solution'] = None
+        item['ai_suggestion'] = None
+        item['ai_rationale'] = None
+        item['alt_id'] = None
+        item['alt_source'] = None
+
+        # FIND SOLUTION - H2H first
         potential_lenders = df_full_network[
             (df_full_network['ID'] == item['ID']) & 
             (df_full_network['Hospital_Source'] != item['Hospital_Source']) &
             (df_full_network['Amount'] > 0)
         ]
-        
+
         if not potential_lenders.empty:
             best_match = potential_lenders.loc[potential_lenders['Amount'].idxmax()]
             item['solution'] = {'Facility': best_match['Hospital_Source'], 'Qty': best_match['Amount'], 'Distance': 12.5}
-        else:
-            item['solution'] = None
-            item['ai_suggestion'] = {'M004': 'Insulin Lispro', 'M005': 'Norepinephrine', 'M009': 'Glipizide'}.get(item['ID'], "Consult Pharmacist")
+
+        # Always attach AI alternative advice (shown alongside H2H or alone)
+        alt_advice = build_alternative_advice(item['Hospital_Source'], item['ID'], item['Medicine'], df_full_network)
+        if alt_advice:
+            item['ai_suggestion'] = alt_advice['ai_suggestion']
+            item['ai_rationale'] = alt_advice['ai_rationale']
+            item['alt_id'] = alt_advice['alt_id']
+            item['alt_source'] = alt_advice['alt_source']
 
         # RISK CALCULATION (1-10 Scale)
         score = float(urgency_val)
         score += 3.0 if amount == 0 else 1.0
         if not item['solution']:
-            score += 2.0
-            
+            score = 9.5  # High-danger for LLM-only cases
+
         item['risk_score'] = min(score, 10.0)
-        
-        # Color Logic for HTML - Changed Info (Blue) to Success (Green)
+
+        # Color Logic for HTML
         if item['risk_score'] >= 8.0:
-            item['risk_class'] = 'bg-danger' # Red
+            item['risk_class'] = 'bg-danger'
         elif item['risk_score'] >= 5.0:
-            item['risk_class'] = 'bg-warning text-dark' # Yellow
+            item['risk_class'] = 'bg-warning text-dark'
         else:
-            item['risk_class'] = 'bg-success' # NOW GREEN
+            item['risk_class'] = 'bg-success'
 
         grouped_results[item['Hospital_Source']].append(item)
 
@@ -135,6 +274,11 @@ def index():
             'forecast_window_weeks': row['forecast_window_weeks'],
             'probability': probability,
             'status_label': 'FORECASTED SHORTAGE',
+            'solution': None,
+            'ai_suggestion': None,
+            'ai_rationale': None,
+            'alt_id': None,
+            'alt_source': None,
         }
 
         potential_lenders = df_full_network[
@@ -149,13 +293,14 @@ def index():
                 'Facility': best_match['Hospital_Source'],
                 'Qty': int(best_match['Amount'])
             }
-        else:
-            forecast_item['solution'] = None
-            forecast_item['ai_suggestion'] = {
-                'M004': 'Insulin Lispro',
-                'M005': 'Norepinephrine',
-                'M009': 'Glipizide'
-            }.get(row['Medicine_ID'], 'Consult Pharmacist')
+
+        # Attach AI alternative advice
+        alt_advice = build_alternative_advice(hospital, row['Medicine_ID'], row['Medicine'], df_full_network)
+        if alt_advice:
+            forecast_item['ai_suggestion'] = alt_advice['ai_suggestion']
+            forecast_item['ai_rationale'] = alt_advice['ai_rationale']
+            forecast_item['alt_id'] = alt_advice['alt_id']
+            forecast_item['alt_source'] = alt_advice['alt_source']
 
         if not forecast_item['solution']:
             risk_score += 2.0
@@ -187,6 +332,42 @@ def index():
                            incident_hospitals=header_text,
                            last_sync=last_sync,
                            predicted_forecasts=grouped_forecasts)
+
+
+@app.route('/get_alternative_sources', methods=['POST'])
+def get_alternative_sources():
+    """Get hospitals that have the AI-suggested alternative medicine in stock"""
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        alternative_id = payload['alternative_id']
+    except KeyError:
+        return jsonify({'status': 'error', 'message': 'Missing alternative_id'}), 400
+
+    try:
+        df_a, df_net = get_data()
+        df_full_network = pd.concat([df_a.assign(Hospital_Source='Hospital A'), df_net], ignore_index=True)
+
+        available_sources = df_full_network[
+            (df_full_network['ID'] == alternative_id) &
+            (df_full_network['Amount'] > 0)
+        ]
+
+        sources = []
+        for _, row in available_sources.iterrows():
+            sources.append({
+                'hospital': row['Hospital_Source'],
+                'amount': int(row['Amount']),
+                'medicine': row['Medicine']
+            })
+
+        return jsonify({
+            'status': 'ok',
+            'sources': sources,
+            'alternative_id': alternative_id
+        })
+
+    except Exception as exc:
+        return jsonify({'status': 'error', 'message': str(exc)}), 500
 
 
 @app.route('/transfer', methods=['POST'])
