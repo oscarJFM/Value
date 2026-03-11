@@ -1,7 +1,9 @@
+import logging
 import os
 import pandas as pd
 import time
-import subprocess  # <--- New Import
+import subprocess
+import traceback
 from functools import wraps
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from collections import defaultdict
@@ -177,6 +179,42 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+
+@app.route('/debug')
+@login_required
+def debug_info():
+    """Temporary debug route to diagnose Cloud Run issues."""
+    info = {}
+    info['BASE_DIR'] = str(BASE_DIR)
+    info['MODEL_PATH'] = str(MODEL_PATH)
+    info['model_exists'] = MODEL_PATH.exists()
+    info['base_dir_exists'] = BASE_DIR.exists()
+
+    history_dir = BASE_DIR / 'historical_inventory'
+    info['history_dir_exists'] = history_dir.exists()
+    if history_dir.exists():
+        history_files = sorted(history_dir.glob('Hospital_*/*.csv'))
+        info['history_file_count'] = len(history_files)
+        info['history_files_sample'] = [str(f.relative_to(BASE_DIR)) for f in history_files[:5]]
+    else:
+        info['history_file_count'] = 0
+
+    inventory_files = sorted(BASE_DIR.glob('Hospital_*_inventory.csv'))
+    info['inventory_files'] = [f.name for f in inventory_files]
+
+    # Try running forecast directly
+    try:
+        results = predict_upcoming_shortages(BASE_DIR, MODEL_PATH, probability_threshold=0.8)
+        info['forecast_result_count'] = len(results)
+        if results:
+            info['forecast_sample'] = results[0]
+    except Exception as exc:
+        info['forecast_error'] = f"{type(exc).__name__}: {exc}"
+        info['forecast_traceback'] = traceback.format_exc()
+
+    return jsonify(info)
+
+
 def get_data():
     # 1. RUN THE INVENTORY SCRIPT AUTOMATICALLY
     # This runs: python manage_inventory.py --base-dir "Value/medicine_inventory_dummy_data_v2"
@@ -192,7 +230,7 @@ def get_data():
         )
         print("Inventory script synced successfully.")
     except Exception as e:
-        print(f"Error running inventory script: {e}")
+        logging.warning(f"Error running inventory script: {e}")
 
     # 2. NOW READ THE DATA (Which is now fresh)
     base_path = BASE_DIR
@@ -321,7 +359,8 @@ def forecasts():
             probability_threshold=0.8,
         )
     except Exception as exc:
-        print(f"Forecasting failed: {exc}")
+        logging.error(f"Forecasting failed: {exc}")
+        logging.error(traceback.format_exc())
         forecast_rows = []
 
     for row in forecast_rows:
