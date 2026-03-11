@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Incidents | NHS Shortage Rescue</title>
+    <title>Forecasted Shortages | NHS Shortage Rescue</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -87,6 +87,7 @@
         }
         .stat-card:hover { transform: translateY(-2px); }
         .stat-card.danger { border-left-color: var(--nhs-red); }
+        .stat-card.warn { border-left-color: var(--nhs-warm-yellow); }
         .stat-card.success { border-left-color: var(--nhs-green); }
         .stat-card.info { border-left-color: var(--nhs-aqua); }
         .stat-card .stat-value {
@@ -128,8 +129,8 @@
             font-size: 1rem;
         }
 
-        /* ── Incident Cards ─────────────────────────── */
-        .incident-card {
+        /* ── Forecast Cards ────────────────────────── */
+        .forecast-card {
             background: var(--nhs-white);
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
@@ -137,23 +138,23 @@
             overflow: hidden;
             transition: transform 0.15s, box-shadow 0.15s;
         }
-        .incident-card:hover {
+        .forecast-card:hover {
             transform: translateY(-3px);
             box-shadow: 0 6px 20px rgba(0,0,0,0.09);
         }
-        .incident-card .card-accent {
+        .forecast-card .card-accent {
             height: 4px;
-            background: var(--nhs-red);
+            background: var(--nhs-warm-yellow);
         }
-        .incident-card .card-accent.medium { background: var(--nhs-warm-yellow); }
-        .incident-card .card-accent.low { background: var(--nhs-green); }
-        .incident-card .card-body { padding: 1.25rem; }
-        .incident-card .med-name {
+        .forecast-card .card-accent.high { background: var(--nhs-red); }
+        .forecast-card .card-accent.low { background: var(--nhs-green); }
+        .forecast-card .card-body { padding: 1.25rem; }
+        .forecast-card .med-name {
             font-weight: 600;
             font-size: 0.95rem;
             color: var(--nhs-dark-blue);
         }
-        .incident-card .med-meta {
+        .forecast-card .med-meta {
             font-size: 0.75rem;
             color: var(--nhs-mid-grey);
         }
@@ -170,19 +171,19 @@
         .risk-medium { background: rgba(250,225,0,0.2); color: #8a7600; }
         .risk-low { background: rgba(0,150,57,0.12); color: var(--nhs-green); }
 
-        .status-tag {
+        .forecast-tag {
             display: inline-block;
-            font-size: 0.7rem;
+            font-size: 0.68rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 3px 8px;
             border-radius: 4px;
+            background: rgba(0,94,184,0.1);
+            color: var(--nhs-blue);
         }
-        .status-stockout { background: rgba(218,41,28,0.1); color: var(--nhs-red); }
-        .status-low { background: rgba(250,225,0,0.18); color: #8a7600; }
 
-        /* ── Solution Boxes ─────────────────────────── */
+        /* ── Solution & Alt Boxes ──────────────────── */
         .solution-box {
             background: #f0faf2;
             border: 1px solid #b8e6c8;
@@ -234,10 +235,7 @@
             padding: 0.45rem 1rem;
             transition: all 0.2s;
         }
-        .btn-nhs-outline:hover {
-            background: var(--nhs-blue);
-            color: #fff;
-        }
+        .btn-nhs-outline:hover { background: var(--nhs-blue); color: #fff; }
         .btn-locked {
             background: var(--nhs-pale-grey);
             border: 1px solid #d1d8dc;
@@ -280,6 +278,19 @@
         }
         .empty-state svg { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; }
         .table-sm td, .table-sm th { font-size: 0.8rem; padding: 0.25rem 0.5rem; }
+        .prob-bar-bg {
+            height: 6px;
+            background: var(--nhs-pale-grey);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .prob-bar {
+            height: 100%;
+            border-radius: 3px;
+            background: var(--nhs-red);
+            transition: width 0.4s;
+        }
     </style>
 </head>
 <body>
@@ -293,8 +304,8 @@
         </button>
         <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav me-auto">
-                <li class="nav-item"><a class="nav-link active" href="/">Live Dashboard <span class="badge-live">LIVE</span></a></li>
-                <li class="nav-item"><a class="nav-link" href="/forecasts">Forecasted Shortages</a></li>
+                <li class="nav-item"><a class="nav-link" href="/">Live Dashboard <span class="badge-live">LIVE</span></a></li>
+                <li class="nav-item"><a class="nav-link active" href="/forecasts">Forecasted Shortages</a></li>
             </ul>
             <div class="nav-meta text-end d-none d-lg-block">
                 <span>Network Status: <strong style="color:#78e08f;">Online</strong></span><br>
@@ -305,10 +316,10 @@
 </nav>
 
 <!-- ══ HERO STRIP ═════════════════════════════════════ -->
-<div style="background: linear-gradient(135deg, var(--nhs-dark-blue) 0%, var(--nhs-blue) 100%); padding: 2.5rem 0 3.5rem;">
+<div style="background: linear-gradient(135deg, var(--nhs-dark-blue) 0%, var(--nhs-aqua) 100%); padding: 2.5rem 0 3.5rem;">
     <div class="container">
-        <h1 style="color:#fff; font-weight:700; font-size:1.6rem; margin-bottom:0.25rem;">Live Incident Dashboard</h1>
-        <p style="color:rgba(255,255,255,0.7); font-size:0.9rem; margin:0;">Real-time medicine shortage monitoring across the regional hospital network.</p>
+        <h1 style="color:#fff; font-weight:700; font-size:1.6rem; margin-bottom:0.25rem;">Forecasted Shortages</h1>
+        <p style="color:rgba(255,255,255,0.7); font-size:0.9rem; margin:0;">Predictive model scanning the regional network for early shortage warnings (next 2 weeks).</p>
     </div>
 </div>
 
@@ -316,27 +327,27 @@
 <div class="container stat-row">
     <div class="row g-3">
         <div class="col-6 col-lg-3">
-            <div class="stat-card danger">
-                <div class="stat-value">{{ total_incidents }}</div>
-                <div class="stat-label">Active Incidents</div>
+            <div class="stat-card warn">
+                <div class="stat-value">{{ total_forecasts }}</div>
+                <div class="stat-label">Forecasted Shortages</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card">
-                <div class="stat-value">{{ hospital_count }}</div>
-                <div class="stat-label">Hospitals Affected</div>
+                <div class="stat-value">{{ forecast_hospital_count }}</div>
+                <div class="stat-label">Hospitals at Risk</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
-            <div class="stat-card info">
-                <div class="stat-value">{{ critical_count }}</div>
+            <div class="stat-card danger">
+                <div class="stat-value">{{ forecast_critical_count }}</div>
                 <div class="stat-label">Critical (Risk 8+)</div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card success">
-                <div class="stat-value">{{ resolved_count }}</div>
-                <div class="stat-label">H2H Solutions Found</div>
+                <div class="stat-value">{{ forecast_resolved_count }}</div>
+                <div class="stat-label">Pre-emptive H2H Found</div>
             </div>
         </div>
     </div>
@@ -346,75 +357,92 @@
 <div class="container" style="margin-top: 2rem;">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <p class="section-title mb-0">Current shortages</p>
-            <p class="text-muted mb-0" style="font-size:0.82rem;">Hospitals: {{ incident_hospitals }}</p>
+            <p class="section-title mb-0">Predicted shortages &mdash; next 2 weeks</p>
+            <p class="text-muted mb-0" style="font-size:0.82rem;">Probability threshold: 80%+</p>
         </div>
         <span style="font-size:0.78rem; color:var(--nhs-mid-grey);">Last sync: {{ last_sync }}</span>
     </div>
 
-    {% if grouped_shortages %}
-        {% for hospital, items in grouped_shortages|dictsort %}
+    {% if predicted_forecasts %}
+        {% for hospital, forecasts in predicted_forecasts|dictsort %}
         <div class="hospital-group">
             <div class="hospital-group-header">
                 <div class="hosp-icon">{{ hospital[-1] }}</div>
                 <h5>{{ hospital }}</h5>
-                <span style="font-size:0.75rem; color:var(--nhs-mid-grey); margin-left:auto;">{{ items|length }} incident{{ 's' if items|length != 1 }}</span>
+                <span style="font-size:0.75rem; color:var(--nhs-mid-grey); margin-left:auto;">{{ forecasts|length }} forecast{{ 's' if forecasts|length != 1 }}</span>
             </div>
             <div class="row g-3">
-                {% for item in items %}
+                {% for forecast in forecasts %}
                 <div class="col-md-6 col-xl-4">
-                    <div class="incident-card">
-                        <div class="card-accent {% if item.risk_score >= 8 %}{% elif item.risk_score >= 5 %}medium{% else %}low{% endif %}"></div>
+                    <div class="forecast-card">
+                        <div class="card-accent {% if forecast.risk_score >= 8 %}high{% elif forecast.risk_score < 5 %}low{% endif %}"></div>
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <div class="med-name">{{ item.Medicine }}</div>
-                                    <div class="med-meta">{{ item.ID }} &middot; Priority {{ item.Urgency }}</div>
+                                    <div class="med-name">{{ forecast.Medicine }}</div>
+                                    <div class="med-meta">{{ forecast.ID }} &middot; {{ forecast.Hospital_Source }}</div>
                                 </div>
-                                <span class="risk-badge {% if item.risk_score >= 8 %}risk-high{% elif item.risk_score >= 5 %}risk-medium{% else %}risk-low{% endif %}">
-                                    Risk {{ item.risk_score }}
+                                <span class="risk-badge {% if forecast.risk_score >= 8 %}risk-high{% elif forecast.risk_score >= 5 %}risk-medium{% else %}risk-low{% endif %}">
+                                    Risk {{ forecast.risk_score }}
                                 </span>
                             </div>
 
                             <div class="mb-3">
-                                <span class="status-tag {% if item.Amount == 0 %}status-stockout{% else %}status-low{% endif %}">
-                                    {{ item.status_label }}
-                                </span>
-                                <span style="font-size:0.8rem; color:var(--nhs-dark-grey); margin-left:0.5rem;">{{ item.Amount }} units remaining</span>
+                                <span class="forecast-tag">{{ forecast.status_label }}</span>
+                                <span style="font-size:0.78rem; color:var(--nhs-dark-grey); margin-left:0.5rem;">within {{ forecast.forecast_window_weeks }} weeks</span>
                             </div>
 
-                            {% if item.solution %}
+                            <div style="font-size:0.8rem; margin-bottom:0.75rem;">
+                                <div class="d-flex justify-content-between">
+                                    <span style="color:var(--nhs-mid-grey);">Current stock</span>
+                                    <strong>{{ forecast.Amount }} units</strong>
+                                </div>
+                                <div class="d-flex justify-content-between" style="margin-top:2px;">
+                                    <span style="color:var(--nhs-mid-grey);">Probability</span>
+                                    <strong>{{ "%.0f"|format(forecast.probability * 100) }}%</strong>
+                                </div>
+                                {% set prob_style = "width:" ~ "%.0f"|format(forecast.probability * 100) ~ "%" %}
+                                <div class="prob-bar-bg">
+                                    <div class="prob-bar" style="{{ prob_style }}"></div>
+                                </div>
+                                <div class="d-flex justify-content-between" style="margin-top:2px;">
+                                    <span style="color:var(--nhs-mid-grey);">Forecast week</span>
+                                    <span style="font-size:0.78rem;">{{ forecast.forecast_week }}</span>
+                                </div>
+                            </div>
+
+                            {% if forecast.solution %}
                             <div class="solution-box mb-2">
                                 <div class="sol-header">H2H Source Identified</div>
                                 <table class="table table-sm table-borderless mb-2">
-                                    <tr><td style="color:var(--nhs-mid-grey)">Lender</td><td><strong>{{ item.solution.Facility }}</strong></td></tr>
-                                    <tr><td style="color:var(--nhs-mid-grey)">Available</td><td>{{ item.solution.Qty }} units</td></tr>
+                                    <tr><td style="color:var(--nhs-mid-grey)">Lender</td><td><strong>{{ forecast.solution.Facility }}</strong></td></tr>
+                                    <tr><td style="color:var(--nhs-mid-grey)">Available</td><td>{{ forecast.solution.Qty }} units</td></tr>
                                 </table>
                                 <button class="btn btn-nhs w-100 btn-sm"
                                     data-bs-toggle="modal" data-bs-target="#transferModal"
-                                    data-medicine="{{ item.Medicine }}" data-id="{{ item.ID }}"
-                                    data-qty="{{ item.solution.Qty }}" data-lender="{{ item.solution.Facility }}"
-                                    data-receiver="{{ hospital }}">
-                                    Execute H2H Transfer
+                                    data-medicine="{{ forecast.Medicine }}" data-id="{{ forecast.ID }}"
+                                    data-qty="{{ forecast.solution.Qty }}" data-lender="{{ forecast.solution.Facility }}"
+                                    data-receiver="{{ forecast.Hospital_Source }}">
+                                    Execute Pre-emptive Transfer
                                 </button>
                             </div>
                             {% endif %}
 
-                            {% if item.ai_suggestion %}
+                            {% if forecast.ai_suggestion %}
                             <div class="alt-box mb-2">
                                 <div class="alt-header">AI Alternative</div>
-                                <p class="mb-1" style="font-size:0.82rem; font-weight:600; color:var(--nhs-dark-blue);">{{ item.ai_suggestion }}</p>
-                                <p class="mb-2" style="font-size:0.72rem; color:var(--nhs-mid-grey);">{{ item.ai_rationale }}</p>
-                                {% if item.alt_source %}
+                                <p class="mb-1" style="font-size:0.82rem; font-weight:600; color:var(--nhs-dark-blue);">{{ forecast.ai_suggestion }}</p>
+                                <p class="mb-2" style="font-size:0.72rem; color:var(--nhs-mid-grey);">{{ forecast.ai_rationale }}</p>
+                                {% if forecast.alt_source %}
                                 <table class="table table-sm table-borderless mb-2">
-                                    <tr><td style="color:var(--nhs-mid-grey)">Source</td><td><strong>{{ item.alt_source.Facility }}</strong></td></tr>
-                                    <tr><td style="color:var(--nhs-mid-grey)">Stock</td><td>{{ item.alt_source.Qty }} units</td></tr>
+                                    <tr><td style="color:var(--nhs-mid-grey)">Source</td><td><strong>{{ forecast.alt_source.Facility }}</strong></td></tr>
+                                    <tr><td style="color:var(--nhs-mid-grey)">Stock</td><td>{{ forecast.alt_source.Qty }} units</td></tr>
                                 </table>
                                 <button class="btn btn-nhs-outline w-100 btn-sm"
                                     data-bs-toggle="modal" data-bs-target="#aiTransferModal"
-                                    data-medicine="{{ item.ai_suggestion }}" data-alt-id="{{ item.alt_id }}"
-                                    data-qty="{{ item.alt_source.Qty }}" data-lender="{{ item.alt_source.Facility }}"
-                                    data-receiver="{{ hospital }}">
+                                    data-medicine="{{ forecast.ai_suggestion }}" data-alt-id="{{ forecast.alt_id }}"
+                                    data-qty="{{ forecast.alt_source.Qty }}" data-lender="{{ forecast.alt_source.Facility }}"
+                                    data-receiver="{{ forecast.Hospital_Source }}">
                                     Request Substitution Transfer
                                 </button>
                                 {% else %}
@@ -435,8 +463,8 @@
     {% else %}
         <div class="empty-state">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <h5 style="color:var(--nhs-dark-blue);">All Clear</h5>
-            <p>No active shortages detected. All hospital inventories are stable.</p>
+            <h5 style="color:var(--nhs-dark-blue);">Outlook Stable</h5>
+            <p>No forecasted shortages detected. Predictive model reports a stable 2-week outlook across all facilities.</p>
         </div>
     {% endif %}
 </div>
@@ -446,7 +474,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content" style="border:0; border-radius:12px; overflow:hidden;">
             <div class="modal-header nhs">
-                <h6 class="modal-title" id="transferModalLabel" style="font-weight:600;">Execute H2H Transfer</h6>
+                <h6 class="modal-title" id="transferModalLabel" style="font-weight:600;">Execute Pre-emptive H2H Transfer</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" style="padding:1.5rem;">

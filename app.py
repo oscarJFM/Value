@@ -2,7 +2,8 @@ import os
 import pandas as pd
 import time
 import subprocess  # <--- New Import
-from flask import Flask, jsonify, render_template, request
+from functools import wraps
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from collections import defaultdict
 from pathlib import Path
 
@@ -133,8 +134,48 @@ def build_alternative_advice(hospital_source, medicine_id, medicine_name, df_ful
 
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'nhs-shortage-rescue-dev-key-2026')
+
 BASE_DIR = Path(__file__).resolve().parent / "medicine_inventory_dummy_data_v2"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "shortage_model.joblib"
+
+# ── Dummy Login Credentials ──────────────────────────────────────────────
+AUTHORISED_USERS = {
+    'admin': 'admin123',
+    'nurse': 'nurse123',
+    'pharmacist': 'pharma123',
+}
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('logged_in'):
+        return redirect(url_for('index'))
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        if username in AUTHORISED_USERS and AUTHORISED_USERS[username] == password:
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('index'))
+        error = 'Invalid username or password.'
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 def get_data():
     # 1. RUN THE INVENTORY SCRIPT AUTOMATICALLY
@@ -169,6 +210,7 @@ def get_data():
     return hosp_a, network_df
 
 @app.route('/')
+@login_required
 def index():
     df_a, df_net = get_data()
     df_full_network = pd.concat([df_a.assign(Hospital_Source='Hospital A'), df_net], ignore_index=True)
@@ -244,6 +286,32 @@ def index():
         grouped_results[hosp] = sorted(grouped_results[hosp], key=lambda x: x['risk_score'], reverse=True)
 
     header_text = ", ".join(sorted(hospitals_in_incident)) if hospitals_in_incident else "No Active Incidents"
+
+    # Compute dashboard stat card values
+    all_items = [item for items in grouped_results.values() for item in items]
+    total_incidents = len(all_items)
+    hospital_count = len(grouped_results)
+    critical_count = sum(1 for item in all_items if item['risk_score'] >= 8.0)
+    resolved_count = sum(1 for item in all_items if item['solution'])
+
+    return render_template('index.html',
+                           grouped_shortages=grouped_results,
+                           incident_hospitals=header_text,
+                           last_sync=last_sync,
+                           total_incidents=total_incidents,
+                           hospital_count=hospital_count,
+                           critical_count=critical_count,
+                           resolved_count=resolved_count)
+
+
+@app.route('/forecasts')
+@login_required
+def forecasts():
+    df_a, df_net = get_data()
+    df_full_network = pd.concat([df_a.assign(Hospital_Source='Hospital A'), df_net], ignore_index=True)
+
+    file_path = BASE_DIR / 'Hospital_A_inventory.csv'
+    last_sync = time.ctime(os.path.getmtime(file_path))
 
     predicted_shortages = []
     try:
@@ -327,14 +395,24 @@ def index():
     for hosp in grouped_forecasts:
         grouped_forecasts[hosp] = sorted(grouped_forecasts[hosp], key=lambda x: x['risk_score'], reverse=True)
 
-    return render_template('index.html', 
-                           grouped_shortages=grouped_results, 
-                           incident_hospitals=header_text,
+    # Compute forecast stat card values
+    all_forecasts = [f for fs in grouped_forecasts.values() for f in fs]
+    total_forecasts = len(all_forecasts)
+    forecast_hospital_count = len(grouped_forecasts)
+    forecast_critical_count = sum(1 for f in all_forecasts if f['risk_score'] >= 8.0)
+    forecast_resolved_count = sum(1 for f in all_forecasts if f['solution'])
+
+    return render_template('forecasts.html',
+                           predicted_forecasts=grouped_forecasts,
                            last_sync=last_sync,
-                           predicted_forecasts=grouped_forecasts)
+                           total_forecasts=total_forecasts,
+                           forecast_hospital_count=forecast_hospital_count,
+                           forecast_critical_count=forecast_critical_count,
+                           forecast_resolved_count=forecast_resolved_count)
 
 
 @app.route('/get_alternative_sources', methods=['POST'])
+@login_required
 def get_alternative_sources():
     """Get hospitals that have the AI-suggested alternative medicine in stock"""
     payload = request.get_json(force=True, silent=True) or {}
@@ -371,6 +449,7 @@ def get_alternative_sources():
 
 
 @app.route('/transfer', methods=['POST'])
+@login_required
 def transfer():
     payload = request.get_json(force=True, silent=True) or {}
     try:
@@ -398,4 +477,4 @@ def transfer():
     )
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
